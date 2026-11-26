@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>護理師刷卡排班表（多人同步版）</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+      margin: 16px;
+      background: #f5f6f8;
+      color: #222;
+    }
+    h1 {
+      font-size: 20px;
+      margin: 0 0 12px 0;
+    }
+    .panel {
+      background: #fff;
+      border: 1px solid #dfe3e8;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .panel-title {
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+    .tag-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #eef2ff;
+      color: #1e3a8a;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 13px;
+    }
+    .tag.holiday-tag {
+      background: #fef2f2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+    .tag button {
+      background: none;
+      border: none;
+      color: #dc2626;
+      font-weight: bold;
+      cursor: pointer;
+      padding: 0 2px;
+      font-size: 14px;
+    }
+    .row-flex {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    input, select, button {
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      font-size: 14px;
+      background: #fff;
+    }
+    button {
+      cursor: pointer;
+    }
+    button.primary {
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
+    }
+    button.danger {
+      background: #dc2626;
+      color: #fff;
+      border-color: #dc2626;
+    }
+    button.secondary {
+      background: #e2e8f0;
+      color: #1e293b;
+      border-color: #cbd5e1;
+    }
+    .badge {
+      font-weight: 600;
+      font-size: 13px;
+      color: #334155;
+      background: #f1f5f9;
+      padding: 5px 10px;
+      border-radius: 6px;
+    }
+    .status {
+      margin-left: auto;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: #ecfdf5;
+      color: #047857;
+    }
+    .status.loading {
+      background: #eff6ff;
+      color: #1d4ed8;
+    }
+    .status.err {
+      background: #fef2f2;
+      color: #b91c1c;
+    }
+    .table-wrap {
+      overflow-x: auto;
+      background: #fff;
+      border: 1px solid #dfe3e8;
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      min-width: 760px;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid #e2e8f0;
+      padding: 6px;
+      text-align: center;
+    }
+    th {
+      background: #f8fafc;
+      position: sticky;
+      top: 0;
+    }
+    tr.weekend td:first-child,
+    tr.weekend td:nth-child(2) {
+      color: #b91c1c;
+      background: #fef2f2;
+      font-weight: 600;
+    }
+    tr.holiday td:first-child,
+    tr.holiday td:nth-child(2) {
+      color: #991b1b;
+      background: #fee2e2;
+      font-weight: 700;
+    }
+    .holiday-name {
+      display: block;
+      font-size: 11px;
+      color: #b91c1c;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    td select {
+      width: 100%;
+      min-width: 90px;
+      padding: 5px 4px;
+      font-size: 13px;
+    }
+    .note {
+      font-size: 12px;
+      color: #64748b;
+      margin-top: 6px;
+    }
+  </style>
+</head>
+<body>
+  <h1>護理師刷卡排班表（多人同步版）</h1>
+
+  <div class="panel">
+    <div class="panel-title">一、調整可選刷卡護理師名單（按「儲存名單到雲端」後大家都會看到）</div>
+    <div id="nurseTags" class="tag-list"></div>
+    <div class="row-flex">
+      <input id="newNurseInput" type="text" placeholder="輸入護理師名字，例如：王小明" />
+      <button id="addNurseBtn" type="button" class="primary">新增護理師</button>
+      <button id="saveNurseCloudBtn" type="button" class="secondary">儲存名單到雲端</button>
+    </div>
+    <div class="note">防呆規則：同一天只要有一組選了某位護理師，當天其他組就不能再選同一個人。</div>
+  </div>
+
+  <div class="panel row-flex">
+    <label>年份：<input id="yearInput" type="number" min="2020" max="2100" style="width: 85px;" /></label>
+    <label>月份：
+      <select id="monthInput">
+        <option value="1">1 月</option><option value="2">2 月</option><option value="3">3 月</option>
+        <option value="4">4 月</option><option value="5">5 月</option><option value="6">6 月</option>
+        <option value="7">7 月</option><option value="8">8 月</option><option value="9">9 月</option>
+        <option value="10">10 月</option><option value="11">11 月</option><option value="12">12 月</option>
+      </select>
+    </label>
+
+    <span id="groupBadge" class="badge">目前組別：A～G（7組）</span>
+    <button id="addGroupBtn" type="button" class="secondary">+ 增加組別</button>
+    <button id="removeGroupBtn" type="button" class="secondary">- 減少組別</button>
+    <button id="reloadBtn" type="button" class="secondary">重新整理最新資料</button>
+    <button id="clearMonthBtn" type="button" class="danger">清空本月排班</button>
+    <span id="statusBadge" class="status">準備就緒</span>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">二、國定假日（自動顯示常見國定假日，也可自行新增或移除）</div>
+    <div class="row-flex" style="margin-bottom: 8px;">
+      <input id="holidayDateInput" type="date" />
+      <input id="holidayNameInput" type="text" placeholder="假日名稱，例如：春節 / 補假" />
+      <button id="addHolidayBtn" type="button" class="primary">新增/更新假日</button>
+    </div>
+    <div id="monthHolidayTags" class="tag-list" style="margin-bottom: 0;"></div>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr id="tableHeadRow"></tr>
+      </thead>
+      <tbody id="scheduleBody"></tbody>
+    </table>
+  </div>
+
+  <script>
+    // ★ 請把下面引號內的文字，換成你在 Google Apps Script 部署後複製的 /exec 網址 ★
+    const API_URL = "https://script.google.com/macros/s/AKfycbx5fdOyJTZ5LFOev2v02fLaJkybxvRxj023QUaTPC53IvvbRL72YLt27sJGWvAX0O1B/exec";
+
+    const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
+    const BUILTIN_FIXED_HOLIDAYS = {
+      "01-01": "元旦",
+      "02-28": "和平紀念日",
+      "04-04": "兒童節",
+      "04-05": "清明節",
+      "05-01": "勞動節",
+      "10-10": "國慶日"
+    };
+    const BUILTIN_SPECIFIC_HOLIDAYS = {
+      "2026-02-16": "除夕",
+      "2026-02-17": "春節初一",
+      "2026-02-18": "春節初二",
+      "2026-02-19": "春節初三",
+      "2026-02-20": "春節調整放假",
+      "2026-04-03": "兒童節補假",
+      "2026-06-19": "端午節",
+      "2026-09-25": "中秋節"
+    };
+
+    let nurses = ["護理師A", "護理師B", "護理師C", "護理師D", "護理師E", "護理師F", "護理師G"];
+    let groupCount = 7;
+    let monthSchedule = {};
+
+    const nurseTagsEl = document.getElementById("nurseTags");
+    const newNurseInput = document.getElementById("newNurseInput");
+    const yearInput = document.getElementById("yearInput");
+    const monthInput = document.getElementById("monthInput");
+    const groupBadge = document.getElementById("groupBadge");
+    const statusBadge = document.getElementById("statusBadge");
+    const holidayDateInput = document.getElementById("holidayDateInput");
+    const holidayNameInput = document.getElementById("holidayNameInput");
+    const monthHolidayTagsEl = document.getElementById("monthHolidayTags");
+    const tableHeadRow = document.getElementById("tableHeadRow");
+    const scheduleBody = document.getElementById("scheduleBody");
+
+    const now = new Date();
+    yearInput.value = now.getFullYear();
+    monthInput.value = now.getMonth() + 1;
+
+    function pad2(n) {
+      return String(n).padStart(2, "0");
+    }
+
+    function getYM() {
+      return `${yearInput.value}-${pad2(monthInput.value)}`;
+    }
+
+    function getGroups() {
+      const list = [];
+      for (let i = 0; i < groupCount; i++) {
+        list.push(String.fromCharCode(65 + i));
+      }
+      return list;
+    }
+
+    function setStatus(text, type = "ok") {
+      statusBadge.textContent = text;
+      statusBadge.className = "status" + (type === "loading" ? " loading" : type === "err" ? " err" : "");
+    }
+
+    function loadCustomHolidays() {
+      try {
+        return JSON.parse(localStorage.getItem("custom_holidays_shared_v1") || "{}");
+      } catch {
+        return {};
+      }
+    }
+
+    function saveCustomHolidays(obj) {
+      localStorage.setItem("custom_holidays_shared_v1", JSON.stringify(obj));
+    }
+
+    function getHolidayName(year, month, day) {
+      const ymd = `${year}-${pad2(month)}-${pad2(day)}`;
+      const md = `${pad2(month)}-${pad2(day)}`;
+      const custom = loadCustomHolidays();
+      if (Object.prototype.hasOwnProperty.call(custom, ymd)) {
+        return custom[ymd] || "";
+      }
+      if (BUILTIN_SPECIFIC_HOLIDAYS[ymd]) return BUILTIN_SPECIFIC_HOLIDAYS[ymd];
+      if (BUILTIN_FIXED_HOLIDAYS[md]) return BUILTIN_FIXED_HOLIDAYS[md];
+      return "";
+    }
+
+    async function callApiGet() {
+      if (!API_URL || API_URL.includes("請把剛剛複製的")) {
+        setStatus("尚未填入網址", "err");
+        renderAll();
+        return;
+      }
+      setStatus("雲端同步中...", "loading");
+      try {
+        const res = await fetch(`${API_URL}?ym=${encodeURIComponent(getYM())}`);
+        const data = await res.json();
+        if (data.status === "ok") {
+          const parsed = String(data.staffText || "")
+            .split(/[,、，\n]+/)
+            .map(s => s.trim())
+            .filter(Boolean);
+          if (parsed.length > 0) nurses = parsed;
+          groupCount = data.groupCount || 7;
+          monthSchedule = data.schedule || {};
+          renderAll();
+          setStatus("已與雲端同步");
+        } else {
+          throw new Error("讀取失敗");
+        }
+      } catch (e) {
+        console.error(e);
+        setStatus("讀取失敗，請檢查網址", "err");
+        renderAll();
+      }
+    }
+
+    async function callApiPost(payload) {
+      if (!API_URL || API_URL.includes("請把剛剛複製的")) {
+        alert("請先在程式碼裡填入 Google Apps Script 網址！");
+        return;
+      }
+      setStatus("儲存到雲端中...", "loading");
+      try {
+        const res = await fetch(API_URL, {
+          method: "POST",
+          headers: { "Content-Type": "text/plain;charset=utf-8" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (data.status === "ok") {
+          setStatus("已儲存到雲端");
+        } else {
+          throw new Error("寫入失敗");
+        }
+      } catch (e) {
+        console.error(e);
+        setStatus("儲存失敗，請重試", "err");
+      }
+    }
+
+    function renderNurseTags() {
+      nurseTagsEl.innerHTML = "";
+      nurses.forEach((name, idx) => {
+        const span = document.createElement("span");
+        span.className = "tag";
+        span.textContent = name;
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = "×";
+        btn.title = "移除";
+        btn.addEventListener("click", async () => {
+          nurses = nurses.filter((_, i) => i !== idx);
+          renderNurseTags();
+          renderTable();
+          await callApiPost({ action: "saveStaff", staffText: nurses.join(", ") });
+        });
+
+        span.appendChild(btn);
+        nurseTagsEl.appendChild(span);
+      });
+    }
+
+    function renderMonthHolidays() {
+      const year = parseInt(yearInput.value, 10);
+      const month = parseInt(monthInput.value, 10);
+      if (!year || !month) return;
+
+      const daysInMonth = new Date(year, month, 0).getDate();
+      const list = [];
+      for (let day = 1; day <= daysInMonth; day++) {
+        const hName = getHolidayName(year, month, day);
+        if (hName) {
+          list.push({ day, ymd: `${year}-${pad2(month)}-${pad2(day)}`, hName });
+        }
+      }
+
+      monthHolidayTagsEl.innerHTML = "";
+      if (list.length === 0) {
+        monthHolidayTagsEl.innerHTML = '<span style="color:#888;font-size:13px;">本月無國定假日</span>';
+        return;
+      }
+
+      list.forEach(item => {
+        const span = document.createElement("span");
+        span.className = "tag holiday-tag";
+        span.textContent = `${month}/${item.day} ${item.hName}`;
+
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.textContent = "×";
+        btn.addEventListener("click", () => {
+          const custom = loadCustomHolidays();
+          custom[item.ymd] = "";
+          saveCustomHolidays(custom);
+          renderMonthHolidays();
+          renderTable();
+        });
+
+        span.appendChild(btn);
+        monthHolidayTagsEl.appendChild(span);
+      });
+    }
+
+    function renderTable() {
+      const year = parseInt(yearInput.value, 10);
+      const month = parseInt(monthInput.value, 10);
+      if (!year || !month) return;
+
+      const groups = getGroups();
+      groupBadge.textContent = groups.length === 1
+        ? `目前組別：${groups[0]}（1組）`
+        : `目前組別：${groups[0]}～${groups[groups.length - 1]}（${groups.length}組）`;
+
+      tableHeadRow.innerHTML = `
+        <th style="width: 82px;">日期</th>
+        <th style="width: 68px;">星期</th>
+        ${groups.map(g => `<th>${g} 組</th>`).join("")}
+      `;
+
+      const daysInMonth = new Date(year, month, 0).getDate();
+      scheduleBody.innerHTML = "";
+
+      for (let day = 1; day <= daysInMonth; day++) {
+        const d = new Date(year, month - 1, day);
+        const wIdx = d.getDay();
+        const isWeekend = wIdx === 0 || wIdx === 6;
+        const holidayName = getHolidayName(year, month, day);
+        const dayStr = String(day);
+        const dayData = monthSchedule[dayStr] || {};
+
+        const tr = document.createElement("tr");
+        if (holidayName) tr.classList.add("holiday");
+        else if (isWeekend) tr.classList.add("weekend");
+
+        const tdDate = document.createElement("td");
+        tdDate.textContent = `${month}/${day}`;
+        if (holidayName) {
+          const hSpan = document.createElement("span");
+          hSpan.className = "holiday-name";
+          hSpan.textContent = holidayName;
+          tdDate.appendChild(hSpan);
+        }
+        tr.appendChild(tdDate);
+
+        const tdWeek = document.createElement("td");
+        tdWeek.textContent = `週${WEEKDAYS[wIdx]}`;
+        tr.appendChild(tdWeek);
+
+        groups.forEach(group => {
+          const td = document.createElement("td");
+          const select = document.createElement("select");
+
+          const blankOpt = document.createElement("option");
+          blankOpt.value = "";
+          blankOpt.textContent = "-- 未排 --";
+          select.appendChild(blankOpt);
+
+          const currentVal = dayData[group] || "";
+
+          // 防呆：當天其他組已選的護理師不能再被這組選
+          const takenByOthers = new Set();
+          groups.forEach(g => {
+            if (g !== group && dayData[g]) {
+              takenByOthers.add(dayData[g]);
+            }
+          });
+
+          const choices = [...nurses];
+          if (currentVal && !choices.includes(currentVal)) {
+            choices.unshift(currentVal);
+          }
+
+          choices.forEach(name => {
+            if (takenByOthers.has(name) && name !== currentVal) return;
+            const opt = document.createElement("option");
+            opt.value = name;
+            opt.textContent = name;
+            if (name === currentVal) opt.selected = true;
+            select.appendChild(opt);
+          });
+
+          select.addEventListener("change", async () => {
+            if (!monthSchedule[dayStr]) monthSchedule[dayStr] = {};
+            monthSchedule[dayStr][group] = select.value;
+            renderTable();
+            await callApiPost({
+              action: "saveCell",
+              ym: getYM(),
+              day: dayStr,
+              group,
+              value: select.value
+            });
+          });
+
+          td.appendChild(select);
+          tr.appendChild(td);
+        });
+
+        scheduleBody.appendChild(tr);
+      }
+    }
+
+    function renderAll() {
+      renderNurseTags();
+      renderMonthHolidays();
+      renderTable();
+    }
+
+    document.getElementById("addNurseBtn").addEventListener("click", async () => {
+      const name = newNurseInput.value.trim();
+      if (!name) return;
+      if (nurses.includes(name)) {
+        alert("名單裡已經有這個名字囉！");
+        return;
+      }
+      nurses.push(name);
+      newNurseInput.value = "";
+      renderNurseTags();
+      renderTable();
+      await callApiPost({ action: "saveStaff", staffText: nurses.join(", ") });
+    });
+
+    document.getElementById("saveNurseCloudBtn").addEventListener("click", async () => {
+      await callApiPost({ action: "saveStaff", staffText: nurses.join(", ") });
+    });
+
+    document.getElementById("addGroupBtn").addEventListener("click", async () => {
+      if (groupCount >= 26) return;
+      groupCount += 1;
+      renderTable();
+      await callApiPost({ action: "setGroupCount", groupCount });
+    });
+
+    document.getElementById("removeGroupBtn").addEventListener("click", async () => {
+      if (groupCount <= 1) {
+        alert("至少要保留 1 組喔！");
+        return;
+      }
+      groupCount -= 1;
+      renderTable();
+      await callApiPost({ action: "setGroupCount", groupCount });
+    });
+
+    document.getElementById("addHolidayBtn").addEventListener("click", () => {
+      const dateVal = holidayDateInput.value;
+      const nameVal = holidayNameInput.value.trim() || "國定假日";
+      if (!dateVal) {
+        alert("請先選擇日期！");
+        return;
+      }
+      const custom = loadCustomHolidays();
+      custom[dateVal] = nameVal;
+      saveCustomHolidays(custom);
+      holidayNameInput.value = "";
+      renderMonthHolidays();
+      renderTable();
+    });
+
+    document.getElementById("reloadBtn").addEventListener("click", callApiGet);
+    yearInput.addEventListener("change", callApiGet);
+    monthInput.addEventListener("change", callApiGet);
+
+    document.getElementById("clearMonthBtn").addEventListener("click", async () => {
+      if (!confirm(`確定要清空 ${yearInput.value} 年 ${monthInput.value} 月的排班嗎？`)) return;
+      monthSchedule = {};
+      renderTable();
+      await callApiPost({ action: "clearMonth", ym: getYM() });
+    });
+
+    callApiGet();
+  </script>
+</body>
+</html>
