@@ -134,6 +134,7 @@
       background: #f8fafc;
       position: sticky;
       top: 0;
+      z-index: 2;
     }
     tr.weekend td:first-child,
     tr.weekend td:nth-child(2) {
@@ -156,9 +157,12 @@
     }
     td select {
       width: 100%;
-      min-width: 90px;
+      min-width: 92px;
       padding: 5px 4px;
       font-size: 13px;
+      border-radius: 5px;
+      border: 1px solid #cbd5e1;
+      color: #1e293b;
     }
     .note {
       font-size: 12px;
@@ -223,6 +227,17 @@
     // ★ 請把下面引號內的文字，換成你在 Google Apps Script 部署後複製的 /exec 網址 ★
     const API_URL = "https://script.google.com/macros/s/AKfycbx5fdOyJTZ5LFOev2v02fLaJkybxvRxj023QUaTPC53IvvbRL72YLt27sJGWvAX0O1B/exec";
 
+    // 舒服好閱讀的柔和色系（header 為表頭色，cell 為欄內下拉選單柔和底色）
+    const GROUP_COLORS = [
+      { header: "#dcebe3", cell: "#f4f9f6" }, // 柔和鼠尾草綠
+      { header: "#f7e5d2", cell: "#fdf8f2" }, // 暖杏米色
+      { header: "#dce8f5", cell: "#f3f8fd" }, // 霧感淺藍
+      { header: "#f5dfe6", cell: "#fdf5f8" }, // 柔粉玫瑰
+      { header: "#f3eed4", cell: "#fbf9ee" }, // 淡奶油黃
+      { header: "#d9efec", cell: "#f2fbfa" }, // 淺薄荷青
+      { header: "#e7e0f5", cell: "#f7f4fc" }  // 淡薰衣草紫
+    ];
+
     const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
     const BUILTIN_FIXED_HOLIDAYS = {
       "01-01": "元旦",
@@ -277,6 +292,10 @@
         list.push(String.fromCharCode(65 + i));
       }
       return list;
+    }
+
+    function getGroupColor(groupIndex) {
+      return GROUP_COLORS[groupIndex % GROUP_COLORS.length];
     }
 
     function setStatus(text, type = "ok") {
@@ -439,7 +458,10 @@
       tableHeadRow.innerHTML = `
         <th style="width: 82px;">日期</th>
         <th style="width: 68px;">星期</th>
-        ${groups.map(g => `<th>${g} 組</th>`).join("")}
+        ${groups.map((g, idx) => {
+          const color = getGroupColor(idx);
+          return `<th style="background:${color.header}; color:#1e293b;">${g} 組</th>`;
+        }).join("")}
       `;
 
       const daysInMonth = new Date(year, month, 0).getDate();
@@ -471,9 +493,13 @@
         tdWeek.textContent = `週${WEEKDAYS[wIdx]}`;
         tr.appendChild(tdWeek);
 
-        groups.forEach(group => {
+        groups.forEach((group, groupIdx) => {
+          const color = getGroupColor(groupIdx);
           const td = document.createElement("td");
+          td.style.backgroundColor = color.cell;
+
           const select = document.createElement("select");
+          select.style.backgroundColor = "#ffffffcc";
 
           const blankOpt = document.createElement("option");
           blankOpt.value = "";
