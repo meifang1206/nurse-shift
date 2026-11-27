@@ -73,6 +73,10 @@
     button {
       cursor: pointer;
     }
+    button:disabled, input:disabled, select:disabled {
+      opacity: 0.55;
+      cursor: not-allowed;
+    }
     button.primary {
       background: #2563eb;
       color: #fff;
@@ -87,6 +91,45 @@
       background: #e2e8f0;
       color: #1e293b;
       border-color: #cbd5e1;
+    }
+    button.lock-btn.unlocked {
+      background: #fef3c7;
+      color: #92400e;
+      border-color: #fcd34d;
+      font-weight: 600;
+    }
+    button.lock-btn.locked {
+      background: #fee2e2;
+      color: #991b1b;
+      border-color: #fca5a5;
+      font-weight: 700;
+    }
+    .support-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #fffbeb;
+      border: 1px solid #fcd34d;
+      color: #92400e;
+      padding: 5px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .lock-banner {
+      display: none;
+      background: #fffbeb;
+      border: 1px solid #fcd34d;
+      color: #92400e;
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    .lock-banner.show {
+      display: block;
     }
     .badge {
       font-weight: 600;
@@ -122,13 +165,14 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 760px;
+      min-width: 960px;
       font-size: 14px;
     }
     th, td {
       border: 1px solid #e2e8f0;
       padding: 6px;
       text-align: center;
+      vertical-align: middle;
     }
     th {
       background: #f8fafc;
@@ -148,12 +192,54 @@
       background: #fee2e2;
       font-weight: 700;
     }
+    tr.pingtung-day td.pingtung-cell {
+      background: #fef9c3 !important;
+    }
+    td.conflict-cell {
+      background: #fef08a !important;
+    }
     .holiday-name {
       display: block;
       font-size: 11px;
       color: #b91c1c;
       font-weight: 600;
       margin-top: 2px;
+    }
+    .pingtung-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      color: #854d0e;
+      cursor: pointer;
+    }
+    .pingtung-lock-note {
+      display: block;
+      font-size: 11px;
+      color: #92400e;
+      font-weight: 600;
+      margin-top: 2px;
+    }
+    .conflict-note {
+      display: block;
+      font-size: 11px;
+      color: #9a3412;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+    .avail-cell {
+      min-width: 150px;
+      max-width: 240px;
+      text-align: left !important;
+      font-size: 12px;
+      line-height: 1.4;
+      color: #334155;
+      background: #fafafa;
+    }
+    .avail-empty {
+      color: #b91c1c;
+      font-weight: 700;
     }
     td select {
       width: 100%;
@@ -174,6 +260,10 @@
 <body>
   <h1>護理師刷卡排班表（多人同步版）</h1>
 
+  <div id="lockBanner" class="lock-banner">
+    目前排班表已設定為「僅供檢視（已鎖定）」，所有欄位與調整功能已停用，避免誤觸修改。如需調整，請先解除鎖定。
+  </div>
+
   <div class="panel">
     <div class="panel-title">一、調整可選刷卡護理師名單（輸入後按 Enter 或點新增，即會同步到雲端）</div>
     <div id="nurseTags" class="tag-list"></div>
@@ -182,7 +272,7 @@
       <button id="addNurseBtn" type="button" class="primary">新增護理師</button>
       <button id="saveNurseCloudBtn" type="button" class="secondary">儲存名單到雲端</button>
     </div>
-    <div class="note">防呆規則：同一天只要有一組選了某位護理師，當天其他組就不能再選同一個人；每 15 秒會自動與雲端同步最新排班。</div>
+    <div class="note">防呆與衝突調節：預設同一天同人不重複；人力不足時可勾選「允許跨組支援（人力吃緊）」進行跨組調度並顯示黃色警示；若勾選「屏東」，該日會自動鎖定為「怡枚」。</div>
   </div>
 
   <div class="panel row-flex">
@@ -199,6 +289,11 @@
     <span id="groupBadge" class="badge">目前組別：A～G（7組）</span>
     <button id="addGroupBtn" type="button" class="secondary">+ 增加組別</button>
     <button id="removeGroupBtn" type="button" class="secondary">- 減少組別</button>
+    <label class="support-toggle" title="人力吃緊時開啟，允許同一天跨組支援並顯示警示">
+      <input id="allowSupportToggle" type="checkbox" />
+      允許跨組支援（人力吃緊）
+    </label>
+    <button id="lockToggleBtn" type="button" class="lock-btn unlocked">🔓 編輯中（點此鎖定唯讀）</button>
     <button id="reloadBtn" type="button" class="secondary">重新整理最新資料</button>
     <button id="clearMonthBtn" type="button" class="danger">清空本月排班</button>
     <span id="statusBadge" class="status">準備就緒</span>
@@ -225,6 +320,7 @@
 
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbx5fdOyJTZ5LFOev2v02fLaJkybxvRxj023QUaTPC53IvvbRL72YLt27sJGWvAX0O1B/exec";
+    const PINGTUNG_NURSE = "怡枚";
 
     const GROUP_COLORS = [
       { header: "#dcebe3", cell: "#f4f9f6" },
@@ -256,10 +352,13 @@
       "2026-09-25": "中秋節"
     };
 
-    let nurses = ["護理師A", "護理師B", "護理師C", "護理師D", "護理師E", "護理師F", "護理師G"];
+    let nurses = ["護理師A", "護理師B", "護理師C", "護理師D", "護理師E", "護理師F", "護理師G", PINGTUNG_NURSE];
     let groupCount = 7;
     let monthSchedule = {};
     let cloudHolidays = {};
+    let pingtungDays = {};
+    let allowCrossGroupSupport = false;
+    let isLocked = false;
     let isSaving = false;
 
     const nurseTagsEl = document.getElementById("nurseTags");
@@ -273,6 +372,9 @@
     const monthHolidayTagsEl = document.getElementById("monthHolidayTags");
     const tableHeadRow = document.getElementById("tableHeadRow");
     const scheduleBody = document.getElementById("scheduleBody");
+    const lockToggleBtn = document.getElementById("lockToggleBtn");
+    const lockBanner = document.getElementById("lockBanner");
+    const allowSupportToggle = document.getElementById("allowSupportToggle");
 
     const now = new Date();
     yearInput.value = now.getFullYear();
@@ -284,6 +386,10 @@
 
     function getYM() {
       return `${yearInput.value}-${pad2(monthInput.value)}`;
+    }
+
+    function getYMD(day) {
+      return `${yearInput.value}-${pad2(monthInput.value)}-${pad2(day)}`;
     }
 
     function getGroups() {
@@ -301,6 +407,33 @@
     function setStatus(text, type = "ok") {
       statusBadge.textContent = text;
       statusBadge.className = "status" + (type === "loading" ? " loading" : type === "err" ? " err" : "");
+    }
+
+    function applyLockUI() {
+      lockBanner.classList.toggle("show", isLocked);
+      if (isLocked) {
+        lockToggleBtn.textContent = "🔒 已鎖定唯讀（點此解鎖）";
+        lockToggleBtn.className = "lock-btn locked";
+      } else {
+        lockToggleBtn.textContent = "🔓 編輯中（點此鎖定唯讀）";
+        lockToggleBtn.className = "lock-btn unlocked";
+      }
+
+      const editControls = [
+        newNurseInput,
+        document.getElementById("addNurseBtn"),
+        document.getElementById("saveNurseCloudBtn"),
+        document.getElementById("addGroupBtn"),
+        document.getElementById("removeGroupBtn"),
+        document.getElementById("clearMonthBtn"),
+        holidayDateInput,
+        holidayNameInput,
+        document.getElementById("addHolidayBtn"),
+        allowSupportToggle
+      ];
+      editControls.forEach(el => {
+        if (el) el.disabled = isLocked;
+      });
     }
 
     function loadLocalHolidays() {
@@ -331,12 +464,10 @@
       return "";
     }
 
-    // 正規化後端回傳的排班資料，支援多種常見結構
     function normalizeSchedule(raw, groups) {
       const result = {};
       if (!raw) return result;
 
-      // 情況 A：已經是 { "1": { "A": "王小明" }, ... } 或 { "2026-11-01": { "A": "王小明" } }
       if (typeof raw === "object" && !Array.isArray(raw)) {
         Object.entries(raw).forEach(([key, val]) => {
           const dayMatch = String(key).match(/(\d{1,2})$/);
@@ -351,7 +482,6 @@
         return result;
       }
 
-      // 情況 B：陣列格式 [{ day: 1, group: "A", nurse: "王小明" } 或 { date: "2026-11-01", A: "王小明" }]
       if (Array.isArray(raw)) {
         raw.forEach(row => {
           if (!row || typeof row !== "object") return;
@@ -408,6 +538,11 @@
             groupCount = Number(data.groupCount);
           }
 
+          isLocked = Boolean(data.isLocked);
+          pingtungDays = (data.pingtungDays && typeof data.pingtungDays === "object")
+            ? data.pingtungDays
+            : {};
+
           const rawSchedule = data.schedule ?? data.data ?? data.rows ?? {};
           monthSchedule = normalizeSchedule(rawSchedule, getGroups());
 
@@ -418,7 +553,7 @@
           }
 
           renderAll();
-          setStatus("已與雲端同步");
+          setStatus(isLocked ? "已鎖定（僅檢視）" : "已與雲端同步");
         } else {
           throw new Error("讀取失敗");
         }
@@ -445,8 +580,15 @@
           body: JSON.stringify(payload)
         });
         const data = await res.json();
+        if (data && data.status === "locked") {
+          isLocked = true;
+          applyLockUI();
+          renderTable();
+          setStatus("目前已鎖定唯讀", "err");
+          return false;
+        }
         if (data && (data.status === "ok" || data.ok === true)) {
-          setStatus("已儲存到雲端");
+          setStatus(isLocked ? "已鎖定（僅檢視）" : "已儲存到雲端");
           return true;
         }
         throw new Error("寫入失敗");
@@ -464,6 +606,7 @@
     }
 
     async function addNurseAction() {
+      if (isLocked) return;
       const name = newNurseInput.value.trim();
       if (!name) return;
       if (nurses.includes(name)) {
@@ -488,7 +631,9 @@
         btn.type = "button";
         btn.textContent = "×";
         btn.title = "移除";
+        btn.disabled = isLocked;
         btn.addEventListener("click", async () => {
+          if (isLocked) return;
           nurses = nurses.filter((_, i) => i !== idx);
           renderNurseTags();
           renderTable();
@@ -528,7 +673,9 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.textContent = "×";
+        btn.disabled = isLocked;
         btn.addEventListener("click", async () => {
+          if (isLocked) return;
           const localH = loadLocalHolidays();
           localH[item.ymd] = "";
           cloudHolidays[item.ymd] = "";
@@ -556,10 +703,12 @@
       tableHeadRow.innerHTML = `
         <th style="width: 82px;">日期</th>
         <th style="width: 68px;">星期</th>
+        <th style="width: 78px;">屏東支援</th>
         ${groups.map((g, idx) => {
           const color = getGroupColor(idx);
           return `<th style="background:${color.header}; color:#1e293b;">${g} 組</th>`;
         }).join("")}
+        <th style="width: 190px;">當日剩餘可用人力</th>
       `;
 
       const daysInMonth = new Date(year, month, 0).getDate();
@@ -571,11 +720,29 @@
         const isWeekend = wIdx === 0 || wIdx === 6;
         const holidayName = getHolidayName(year, month, day);
         const dayStr = String(day);
-        const dayData = monthSchedule[dayStr] || {};
+        const ymd = getYMD(day);
+        const ptEnabled = Boolean(pingtungDays[ymd]);
+
+        if (!monthSchedule[dayStr]) monthSchedule[dayStr] = {};
+        const dayData = monthSchedule[dayStr];
+
+        if (ptEnabled) {
+          groups.forEach(g => {
+            dayData[g] = PINGTUNG_NURSE;
+          });
+        }
+
+        // 統計當日已排次數與跨組衝突
+        const countsByNurse = {};
+        groups.forEach(g => {
+          const val = dayData[g];
+          if (val) countsByNurse[val] = (countsByNurse[val] || 0) + 1;
+        });
 
         const tr = document.createElement("tr");
         if (holidayName) tr.classList.add("holiday");
         else if (isWeekend) tr.classList.add("weekend");
+        if (ptEnabled) tr.classList.add("pingtung-day");
 
         const tdDate = document.createElement("td");
         tdDate.textContent = `${month}/${day}`;
@@ -591,43 +758,116 @@
         tdWeek.textContent = `週${WEEKDAYS[wIdx]}`;
         tr.appendChild(tdWeek);
 
+        const tdPt = document.createElement("td");
+        const ptLabel = document.createElement("label");
+        ptLabel.className = "pingtung-toggle";
+        const ptCb = document.createElement("input");
+        ptCb.type = "checkbox";
+        ptCb.checked = ptEnabled;
+        ptCb.disabled = isLocked;
+        ptCb.addEventListener("change", async () => {
+          if (isLocked) return;
+          const nextEnabled = ptCb.checked;
+          if (nextEnabled) {
+            pingtungDays[ymd] = true;
+            if (!monthSchedule[dayStr]) monthSchedule[dayStr] = {};
+            groups.forEach(g => {
+              monthSchedule[dayStr][g] = PINGTUNG_NURSE;
+            });
+            renderTable();
+            await callApiPost({ action: "setPingtungDay", ymd, enabled: true });
+            for (const g of groups) {
+              await callApiPost({
+                action: "saveCell",
+                ym: getYM(),
+                day: dayStr,
+                group: g,
+                value: PINGTUNG_NURSE
+              });
+            }
+          } else {
+            delete pingtungDays[ymd];
+            if (monthSchedule[dayStr]) {
+              groups.forEach(g => {
+                if (monthSchedule[dayStr][g] === PINGTUNG_NURSE) {
+                  monthSchedule[dayStr][g] = "";
+                }
+              });
+            }
+            renderTable();
+            await callApiPost({ action: "setPingtungDay", ymd, enabled: false });
+            for (const g of groups) {
+              await callApiPost({
+                action: "saveCell",
+                ym: getYM(),
+                day: dayStr,
+                group: g,
+                value: monthSchedule[dayStr][g] || ""
+              });
+            }
+          }
+        });
+        ptLabel.appendChild(ptCb);
+        ptLabel.appendChild(document.createTextNode("屏東"));
+        tdPt.appendChild(ptLabel);
+        tr.appendChild(tdPt);
+
         groups.forEach((group, groupIdx) => {
           const color = getGroupColor(groupIdx);
           const td = document.createElement("td");
+          td.className = "pingtung-cell";
           td.style.backgroundColor = color.cell;
 
           const select = document.createElement("select");
           select.style.backgroundColor = "#ffffffcc";
 
-          const blankOpt = document.createElement("option");
-          blankOpt.value = "";
-          blankOpt.textContent = "-- 未排 --";
-          select.appendChild(blankOpt);
-
-          const currentVal = dayData[group] || "";
-
-          const takenByOthers = new Set();
-          groups.forEach(g => {
-            if (g !== group && dayData[g]) {
-              takenByOthers.add(dayData[g]);
-            }
-          });
-
-          const choices = [...nurses];
-          if (currentVal && !choices.includes(currentVal)) {
-            choices.unshift(currentVal);
+          const currentVal = ptEnabled ? PINGTUNG_NURSE : (dayData[group] || "");
+          const isDuplicateToday = !ptEnabled && Boolean(currentVal) && (countsByNurse[currentVal] || 0) > 1;
+          if (isDuplicateToday) {
+            td.classList.add("conflict-cell");
           }
 
-          choices.forEach(name => {
-            if (takenByOthers.has(name) && name !== currentVal) return;
+          if (ptEnabled) {
             const opt = document.createElement("option");
-            opt.value = name;
-            opt.textContent = name;
-            if (name === currentVal) opt.selected = true;
+            opt.value = PINGTUNG_NURSE;
+            opt.textContent = PINGTUNG_NURSE;
+            opt.selected = true;
             select.appendChild(opt);
-          });
+            select.disabled = true;
+          } else {
+            const blankOpt = document.createElement("option");
+            blankOpt.value = "";
+            blankOpt.textContent = "-- 未排 --";
+            select.appendChild(blankOpt);
+
+            const takenByOthers = new Set();
+            groups.forEach(g => {
+              if (g !== group && dayData[g]) {
+                takenByOthers.add(dayData[g]);
+              }
+            });
+
+            const choices = [...nurses];
+            if (currentVal && !choices.includes(currentVal)) {
+              choices.unshift(currentVal);
+            }
+
+            choices.forEach(name => {
+              const isTaken = takenByOthers.has(name) && name !== currentVal;
+              if (isTaken && !allowCrossGroupSupport) return;
+
+              const opt = document.createElement("option");
+              opt.value = name;
+              opt.textContent = isTaken ? `${name}（已排/支援）` : name;
+              if (name === currentVal) opt.selected = true;
+              select.appendChild(opt);
+            });
+
+            select.disabled = isLocked;
+          }
 
           select.addEventListener("change", async () => {
+            if (isLocked || ptEnabled) return;
             if (!monthSchedule[dayStr]) monthSchedule[dayStr] = {};
             monthSchedule[dayStr][group] = select.value;
             renderTable();
@@ -641,18 +881,73 @@
           });
 
           td.appendChild(select);
+
+          if (ptEnabled) {
+            const noteSpan = document.createElement("span");
+            noteSpan.className = "pingtung-lock-note";
+            noteSpan.textContent = "已鎖定怡枚";
+            td.appendChild(noteSpan);
+          } else if (isDuplicateToday) {
+            const warnSpan = document.createElement("span");
+            warnSpan.className = "conflict-note";
+            warnSpan.textContent = "⚠ 跨組支援中";
+            td.appendChild(warnSpan);
+          }
+
           tr.appendChild(td);
         });
+
+        // 當日剩餘可用人力提示欄
+        const tdAvail = document.createElement("td");
+        tdAvail.className = "avail-cell";
+        if (ptEnabled) {
+          tdAvail.innerHTML = `<span class="pingtung-lock-note">屏東日（鎖定${PINGTUNG_NURSE}）</span>`;
+        } else {
+          const available = nurses.filter(n => !countsByNurse[n]);
+          const conflicts = Object.entries(countsByNurse)
+            .filter(([, cnt]) => cnt > 1)
+            .map(([name, cnt]) => `${name}×${cnt}`);
+
+          if (available.length > 0) {
+            tdAvail.innerHTML = `<div>剩餘（${available.length}）：${available.join("、")}</div>`;
+          } else {
+            tdAvail.innerHTML = `<div class="avail-empty">剩餘（0）：已無空閒人力</div>`;
+          }
+
+          if (conflicts.length > 0) {
+            tdAvail.innerHTML += `<div class="conflict-note">支援警示：${conflicts.join("、")}</div>`;
+          }
+        }
+        tr.appendChild(tdAvail);
 
         scheduleBody.appendChild(tr);
       }
     }
 
     function renderAll() {
+      applyLockUI();
       renderNurseTags();
       renderMonthHolidays();
       renderTable();
     }
+
+    allowSupportToggle.addEventListener("change", () => {
+      if (isLocked) {
+        allowSupportToggle.checked = allowCrossGroupSupport;
+        return;
+      }
+      allowCrossGroupSupport = allowSupportToggle.checked;
+      renderTable();
+    });
+
+    lockToggleBtn.addEventListener("click", async () => {
+      const targetLock = !isLocked;
+      const ok = await callApiPost({ action: "setLocked", isLocked: targetLock });
+      if (ok) {
+        isLocked = targetLock;
+        renderAll();
+      }
+    });
 
     document.getElementById("addNurseBtn").addEventListener("click", addNurseAction);
     newNurseInput.addEventListener("keydown", async (e) => {
@@ -663,17 +958,19 @@
     });
 
     document.getElementById("saveNurseCloudBtn").addEventListener("click", async () => {
+      if (isLocked) return;
       await callApiPost({ action: "saveStaff", staffText: nurses.join(", ") });
     });
 
     document.getElementById("addGroupBtn").addEventListener("click", async () => {
-      if (groupCount >= 26) return;
+      if (isLocked || groupCount >= 26) return;
       groupCount += 1;
       renderTable();
       await callApiPost({ action: "setGroupCount", groupCount });
     });
 
     document.getElementById("removeGroupBtn").addEventListener("click", async () => {
+      if (isLocked) return;
       if (groupCount <= 1) {
         alert("至少要保留 1 組喔！");
         return;
@@ -684,6 +981,7 @@
     });
 
     document.getElementById("addHolidayBtn").addEventListener("click", async () => {
+      if (isLocked) return;
       const dateVal = holidayDateInput.value;
       const nameVal = holidayNameInput.value.trim() || "國定假日";
       if (!dateVal) {
@@ -705,13 +1003,13 @@
     monthInput.addEventListener("change", () => callApiGet(false));
 
     document.getElementById("clearMonthBtn").addEventListener("click", async () => {
+      if (isLocked) return;
       if (!confirm(`確定要清空 ${yearInput.value} 年 ${monthInput.value} 月的排班嗎？`)) return;
       monthSchedule = {};
       renderTable();
       await callApiPost({ action: "clearMonth", ym: getYM() });
     });
 
-    // 每 15 秒自動同步雲端資料（若使用者正在操作輸入框或下拉選單則略過本次）
     setInterval(() => {
       const activeTag = document.activeElement ? document.activeElement.tagName : "";
       if (activeTag === "SELECT" || activeTag === "INPUT") return;
