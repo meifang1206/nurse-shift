@@ -260,7 +260,7 @@
       <button id="addNurseBtn" type="button" class="primary">新增護理師</button>
       <button id="saveNurseCloudBtn" type="button" class="secondary">儲存名單到雲端</button>
     </div>
-    <div class="note">屏東與排班規則：F、G 組為屏東組，選單僅提供「-- 未排 --」、「怡玫」及「其他（自行輸入名字）」；其他組只有在當天其他名字都被選走時才開放選取「怡玫」。人力不足時亦可勾選「允許跨組支援（人力吃緊）」。</div>
+    <div class="note">屏東與排班規則：F、G 組為屏東組，選單僅提供「-- 未排 --」、「怡玫」及「其他（自行輸入名字）」；E 組可選所有人（含怡玫）；A～D 組只有在當天其他名字都被選走時才開放選取「怡玫」。人力不足時亦可勾選「允許跨組支援（人力吃緊）」。</div>
   </div>
 
   <div class="panel row-flex">
@@ -309,7 +309,8 @@
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbx5fdOyJTZ5LFOev2v02fLaJkybxvRxj023QUaTPC53IvvbRL72YLt27sJGWvAX0O1B/exec";
     const PINGTUNG_NURSE = "怡玫";
-    const PINGTUNG_GROUPS = new Set(["F", "G"]);
+    const PINGTUNG_GROUPS = new Set(["F", "G"]);      // 只能選怡玫（或臨時輸入）
+    const PINGTUNG_OPEN_GROUPS = new Set(["E"]);      // 所有人都能選，且可直接選怡玫
     const CUSTOM_OPTION_VALUE = "__CUSTOM_INPUT__";
 
     const GROUP_COLORS = [
@@ -785,7 +786,7 @@
             customTriggerOpt.textContent = "＋ 其他（自行輸入名字）...";
             select.appendChild(customTriggerOpt);
           } else {
-            // 其他組（A～E 等）：只有在其他名字都被選走時才開放選取「怡玫」
+            // 其他組：A～D 只有在其他名字都被選走時才開放「怡玫」；E 組不受此限制
             const otherNames = nurses.filter(n => n !== PINGTUNG_NURSE);
             const allOtherNamesTaken =
               otherNames.length > 0 && otherNames.every(n => takenByOthers.has(n));
@@ -796,7 +797,12 @@
             }
 
             choices.forEach(name => {
-              if (name === PINGTUNG_NURSE && !allOtherNamesTaken && name !== currentVal) {
+              if (
+                name === PINGTUNG_NURSE &&
+                !PINGTUNG_OPEN_GROUPS.has(group) &&
+                !allOtherNamesTaken &&
+                name !== currentVal
+              ) {
                 return;
               }
 
