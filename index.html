@@ -165,7 +165,7 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 960px;
+      min-width: 900px;
       font-size: 14px;
     }
     th, td {
@@ -192,9 +192,6 @@
       background: #fee2e2;
       font-weight: 700;
     }
-    tr.pingtung-day td.pingtung-cell {
-      background: #fef9c3 !important;
-    }
     td.conflict-cell {
       background: #fef08a !important;
     }
@@ -205,19 +202,10 @@
       font-weight: 600;
       margin-top: 2px;
     }
-    .pingtung-toggle {
-      display: inline-flex;
-      align-items: center;
-      gap: 4px;
-      font-size: 12px;
-      font-weight: 600;
-      color: #854d0e;
-      cursor: pointer;
-    }
-    .pingtung-lock-note {
+    .custom-note {
       display: block;
       font-size: 11px;
-      color: #92400e;
+      color: #1d4ed8;
       font-weight: 600;
       margin-top: 2px;
     }
@@ -243,7 +231,7 @@
     }
     td select {
       width: 100%;
-      min-width: 92px;
+      min-width: 96px;
       padding: 5px 4px;
       font-size: 13px;
       border-radius: 5px;
@@ -272,7 +260,7 @@
       <button id="addNurseBtn" type="button" class="primary">新增護理師</button>
       <button id="saveNurseCloudBtn" type="button" class="secondary">儲存名單到雲端</button>
     </div>
-    <div class="note">防呆與衝突調節：預設同一天同人不重複；人力不足時可勾選「允許跨組支援（人力吃緊）」進行跨組調度並顯示黃色警示；若勾選「屏東」，該日會自動鎖定為「怡枚」。</div>
+    <div class="note">屏東與排班規則：F、G 組為屏東組，選單僅提供「-- 未排 --」、「怡枚」及「其他（自行輸入名字）」；其他組只有在當天其他名字都被選走時才開放選取「怡枚」。人力不足時亦可勾選「允許跨組支援（人力吃緊）」。</div>
   </div>
 
   <div class="panel row-flex">
@@ -321,6 +309,8 @@
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbx5fdOyJTZ5LFOev2v02fLaJkybxvRxj023QUaTPC53IvvbRL72YLt27sJGWvAX0O1B/exec";
     const PINGTUNG_NURSE = "怡枚";
+    const PINGTUNG_GROUPS = new Set(["F", "G"]);
+    const CUSTOM_OPTION_VALUE = "__CUSTOM_INPUT__";
 
     const GROUP_COLORS = [
       { header: "#dcebe3", cell: "#f4f9f6" },
@@ -356,7 +346,6 @@
     let groupCount = 7;
     let monthSchedule = {};
     let cloudHolidays = {};
-    let pingtungDays = {};
     let allowCrossGroupSupport = false;
     let isLocked = false;
     let isSaving = false;
@@ -386,10 +375,6 @@
 
     function getYM() {
       return `${yearInput.value}-${pad2(monthInput.value)}`;
-    }
-
-    function getYMD(day) {
-      return `${yearInput.value}-${pad2(monthInput.value)}-${pad2(day)}`;
     }
 
     function getGroups() {
@@ -476,7 +461,9 @@
           if (!result[dayKey]) result[dayKey] = {};
           Object.entries(val).forEach(([g, nurse]) => {
             const cleanGroup = String(g).replace("組", "").trim().toUpperCase();
-            if (nurse) result[dayKey][cleanGroup] = String(nurse).trim();
+            if (nurse) {
+              result[dayKey][cleanGroup] = String(nurse).trim();
+            }
           });
         });
         return result;
@@ -539,9 +526,6 @@
           }
 
           isLocked = Boolean(data.isLocked);
-          pingtungDays = (data.pingtungDays && typeof data.pingtungDays === "object")
-            ? data.pingtungDays
-            : {};
 
           const rawSchedule = data.schedule ?? data.data ?? data.rows ?? {};
           monthSchedule = normalizeSchedule(rawSchedule, getGroups());
@@ -703,10 +687,10 @@
       tableHeadRow.innerHTML = `
         <th style="width: 82px;">日期</th>
         <th style="width: 68px;">星期</th>
-        <th style="width: 78px;">屏東支援</th>
         ${groups.map((g, idx) => {
           const color = getGroupColor(idx);
-          return `<th style="background:${color.header}; color:#1e293b;">${g} 組</th>`;
+          const ptTag = PINGTUNG_GROUPS.has(g) ? `<div style="font-size:11px;color:#92400e;">（屏東）</div>` : "";
+          return `<th style="background:${color.header}; color:#1e293b;">${g} 組${ptTag}</th>`;
         }).join("")}
         <th style="width: 190px;">當日剩餘可用人力</th>
       `;
@@ -720,19 +704,10 @@
         const isWeekend = wIdx === 0 || wIdx === 6;
         const holidayName = getHolidayName(year, month, day);
         const dayStr = String(day);
-        const ymd = getYMD(day);
-        const ptEnabled = Boolean(pingtungDays[ymd]);
 
         if (!monthSchedule[dayStr]) monthSchedule[dayStr] = {};
         const dayData = monthSchedule[dayStr];
 
-        if (ptEnabled) {
-          groups.forEach(g => {
-            dayData[g] = PINGTUNG_NURSE;
-          });
-        }
-
-        // 統計當日已排次數與跨組衝突
         const countsByNurse = {};
         groups.forEach(g => {
           const val = dayData[g];
@@ -742,7 +717,6 @@
         const tr = document.createElement("tr");
         if (holidayName) tr.classList.add("holiday");
         else if (isWeekend) tr.classList.add("weekend");
-        if (ptEnabled) tr.classList.add("pingtung-day");
 
         const tdDate = document.createElement("td");
         tdDate.textContent = `${month}/${day}`;
@@ -758,94 +732,63 @@
         tdWeek.textContent = `週${WEEKDAYS[wIdx]}`;
         tr.appendChild(tdWeek);
 
-        const tdPt = document.createElement("td");
-        const ptLabel = document.createElement("label");
-        ptLabel.className = "pingtung-toggle";
-        const ptCb = document.createElement("input");
-        ptCb.type = "checkbox";
-        ptCb.checked = ptEnabled;
-        ptCb.disabled = isLocked;
-        ptCb.addEventListener("change", async () => {
-          if (isLocked) return;
-          const nextEnabled = ptCb.checked;
-          if (nextEnabled) {
-            pingtungDays[ymd] = true;
-            if (!monthSchedule[dayStr]) monthSchedule[dayStr] = {};
-            groups.forEach(g => {
-              monthSchedule[dayStr][g] = PINGTUNG_NURSE;
-            });
-            renderTable();
-            await callApiPost({ action: "setPingtungDay", ymd, enabled: true });
-            for (const g of groups) {
-              await callApiPost({
-                action: "saveCell",
-                ym: getYM(),
-                day: dayStr,
-                group: g,
-                value: PINGTUNG_NURSE
-              });
-            }
-          } else {
-            delete pingtungDays[ymd];
-            if (monthSchedule[dayStr]) {
-              groups.forEach(g => {
-                if (monthSchedule[dayStr][g] === PINGTUNG_NURSE) {
-                  monthSchedule[dayStr][g] = "";
-                }
-              });
-            }
-            renderTable();
-            await callApiPost({ action: "setPingtungDay", ymd, enabled: false });
-            for (const g of groups) {
-              await callApiPost({
-                action: "saveCell",
-                ym: getYM(),
-                day: dayStr,
-                group: g,
-                value: monthSchedule[dayStr][g] || ""
-              });
-            }
-          }
-        });
-        ptLabel.appendChild(ptCb);
-        ptLabel.appendChild(document.createTextNode("屏東"));
-        tdPt.appendChild(ptLabel);
-        tr.appendChild(tdPt);
-
         groups.forEach((group, groupIdx) => {
           const color = getGroupColor(groupIdx);
           const td = document.createElement("td");
-          td.className = "pingtung-cell";
+          const isPtGroup = PINGTUNG_GROUPS.has(group);
           td.style.backgroundColor = color.cell;
 
           const select = document.createElement("select");
           select.style.backgroundColor = "#ffffffcc";
 
-          const currentVal = ptEnabled ? PINGTUNG_NURSE : (dayData[group] || "");
-          const isDuplicateToday = !ptEnabled && Boolean(currentVal) && (countsByNurse[currentVal] || 0) > 1;
+          const currentVal = dayData[group] || "";
+          const isDuplicateToday = Boolean(currentVal) && (countsByNurse[currentVal] || 0) > 1;
           if (isDuplicateToday) {
             td.classList.add("conflict-cell");
           }
 
-          if (ptEnabled) {
-            const opt = document.createElement("option");
-            opt.value = PINGTUNG_NURSE;
-            opt.textContent = PINGTUNG_NURSE;
-            opt.selected = true;
-            select.appendChild(opt);
-            select.disabled = true;
-          } else {
-            const blankOpt = document.createElement("option");
-            blankOpt.value = "";
-            blankOpt.textContent = "-- 未排 --";
-            select.appendChild(blankOpt);
+          const takenByOthers = new Set();
+          groups.forEach(g => {
+            if (g !== group && dayData[g]) {
+              takenByOthers.add(dayData[g]);
+            }
+          });
 
-            const takenByOthers = new Set();
-            groups.forEach(g => {
-              if (g !== group && dayData[g]) {
-                takenByOthers.add(dayData[g]);
-              }
-            });
+          const blankOpt = document.createElement("option");
+          blankOpt.value = "";
+          blankOpt.textContent = "-- 未排 --";
+          if (!currentVal) blankOpt.selected = true;
+          select.appendChild(blankOpt);
+
+          if (isPtGroup) {
+            // F、G 組（屏東）：僅提供「-- 未排 --」、「怡枚」及「其他（自行輸入名字）...」
+            const isYimeiTaken = takenByOthers.has(PINGTUNG_NURSE) && currentVal !== PINGTUNG_NURSE;
+            if (!isYimeiTaken || allowCrossGroupSupport) {
+              const yimeiOpt = document.createElement("option");
+              yimeiOpt.value = PINGTUNG_NURSE;
+              yimeiOpt.textContent = isYimeiTaken ? `${PINGTUNG_NURSE}（已排/支援）` : PINGTUNG_NURSE;
+              if (currentVal === PINGTUNG_NURSE) yimeiOpt.selected = true;
+              select.appendChild(yimeiOpt);
+            }
+
+            // 若目前存有自行輸入的名字（非空且非怡枚），顯示在選單中並選取
+            if (currentVal && currentVal !== PINGTUNG_NURSE) {
+              const customCurrentOpt = document.createElement("option");
+              customCurrentOpt.value = currentVal;
+              customCurrentOpt.textContent = `${currentVal}（臨時）`;
+              customCurrentOpt.selected = true;
+              select.appendChild(customCurrentOpt);
+            }
+
+            const customTriggerOpt = document.createElement("option");
+            customTriggerOpt.value = CUSTOM_OPTION_VALUE;
+            customTriggerOpt.textContent = "＋ 其他（自行輸入名字）...";
+            select.appendChild(customTriggerOpt);
+          } else {
+            // 其他組（A～E 等）：只有在其他名字都被選走時才開放選取「怡枚」
+            const otherNames = nurses.filter(n => n !== PINGTUNG_NURSE);
+            const allOtherNamesTaken =
+              otherNames.length > 0 && otherNames.every(n => takenByOthers.has(n));
 
             const choices = [...nurses];
             if (currentVal && !choices.includes(currentVal)) {
@@ -853,6 +796,10 @@
             }
 
             choices.forEach(name => {
+              if (name === PINGTUNG_NURSE && !allOtherNamesTaken && name !== currentVal) {
+                return;
+              }
+
               const isTaken = takenByOthers.has(name) && name !== currentVal;
               if (isTaken && !allowCrossGroupSupport) return;
 
@@ -862,32 +809,46 @@
               if (name === currentVal) opt.selected = true;
               select.appendChild(opt);
             });
-
-            select.disabled = isLocked;
           }
 
+          select.disabled = isLocked;
+
           select.addEventListener("change", async () => {
-            if (isLocked || ptEnabled) return;
+            if (isLocked) return;
+            let nextVal = select.value;
+
+            if (isPtGroup && nextVal === CUSTOM_OPTION_VALUE) {
+              const inputName = prompt(`請輸入 ${month}/${day} ${group} 組臨時支援人員名字：`, "");
+              if (!inputName || !inputName.trim()) {
+                // 使用者取消輸入，恢復原本選取狀態
+                renderTable();
+                return;
+              }
+              nextVal = inputName.trim();
+            }
+
             if (!monthSchedule[dayStr]) monthSchedule[dayStr] = {};
-            monthSchedule[dayStr][group] = select.value;
+            monthSchedule[dayStr][group] = nextVal;
             renderTable();
             await callApiPost({
               action: "saveCell",
               ym: getYM(),
               day: dayStr,
               group,
-              value: select.value
+              value: nextVal
             });
           });
 
           td.appendChild(select);
 
-          if (ptEnabled) {
-            const noteSpan = document.createElement("span");
-            noteSpan.className = "pingtung-lock-note";
-            noteSpan.textContent = "已鎖定怡枚";
-            td.appendChild(noteSpan);
-          } else if (isDuplicateToday) {
+          if (isPtGroup && currentVal && currentVal !== PINGTUNG_NURSE) {
+            const customSpan = document.createElement("span");
+            customSpan.className = "custom-note";
+            customSpan.textContent = "臨時指定人員";
+            td.appendChild(customSpan);
+          }
+
+          if (isDuplicateToday) {
             const warnSpan = document.createElement("span");
             warnSpan.className = "conflict-note";
             warnSpan.textContent = "⚠ 跨組支援中";
@@ -900,23 +861,19 @@
         // 當日剩餘可用人力提示欄
         const tdAvail = document.createElement("td");
         tdAvail.className = "avail-cell";
-        if (ptEnabled) {
-          tdAvail.innerHTML = `<span class="pingtung-lock-note">屏東日（鎖定${PINGTUNG_NURSE}）</span>`;
+        const available = nurses.filter(n => !countsByNurse[n]);
+        const conflicts = Object.entries(countsByNurse)
+          .filter(([, cnt]) => cnt > 1)
+          .map(([name, cnt]) => `${name}×${cnt}`);
+
+        if (available.length > 0) {
+          tdAvail.innerHTML += `<div>剩餘（${available.length}）：${available.join("、")}</div>`;
         } else {
-          const available = nurses.filter(n => !countsByNurse[n]);
-          const conflicts = Object.entries(countsByNurse)
-            .filter(([, cnt]) => cnt > 1)
-            .map(([name, cnt]) => `${name}×${cnt}`);
+          tdAvail.innerHTML += `<div class="avail-empty">剩餘（0）：已無空閒人力</div>`;
+        }
 
-          if (available.length > 0) {
-            tdAvail.innerHTML = `<div>剩餘（${available.length}）：${available.join("、")}</div>`;
-          } else {
-            tdAvail.innerHTML = `<div class="avail-empty">剩餘（0）：已無空閒人力</div>`;
-          }
-
-          if (conflicts.length > 0) {
-            tdAvail.innerHTML += `<div class="conflict-note">支援警示：${conflicts.join("、")}</div>`;
-          }
+        if (conflicts.length > 0) {
+          tdAvail.innerHTML += `<div class="conflict-note">支援警示：${conflicts.join("、")}</div>`;
         }
         tr.appendChild(tdAvail);
 
