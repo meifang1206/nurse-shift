@@ -175,14 +175,14 @@
   <h1>護理師刷卡排班表（多人同步版）</h1>
 
   <div class="panel">
-    <div class="panel-title">一、調整可選刷卡護理師名單（按「儲存名單到雲端」後大家都會看到）</div>
+    <div class="panel-title">一、調整可選刷卡護理師名單（輸入後按 Enter 或點新增，即會同步到雲端）</div>
     <div id="nurseTags" class="tag-list"></div>
     <div class="row-flex">
-      <input id="newNurseInput" type="text" placeholder="輸入護理師名字，例如：王小明" />
+      <input id="newNurseInput" type="text" placeholder="輸入護理師名字，例如：王小明（按 Enter 可直接新增）" />
       <button id="addNurseBtn" type="button" class="primary">新增護理師</button>
       <button id="saveNurseCloudBtn" type="button" class="secondary">儲存名單到雲端</button>
     </div>
-    <div class="note">防呆規則：同一天只要有一組選了某位護理師，當天其他組就不能再選同一個人。</div>
+    <div class="note">防呆規則：同一天只要有一組選了某位護理師，當天其他組就不能再選同一個人；每 15 秒會自動與雲端同步最新排班。</div>
   </div>
 
   <div class="panel row-flex">
@@ -205,7 +205,7 @@
   </div>
 
   <div class="panel">
-    <div class="panel-title">二、國定假日（自動顯示常見國定假日，也可自行新增或移除）</div>
+    <div class="panel-title">二、國定假日（自動顯示常見國定假日，新增/移除會同步至雲端與本機）</div>
     <div class="row-flex" style="margin-bottom: 8px;">
       <input id="holidayDateInput" type="date" />
       <input id="holidayNameInput" type="text" placeholder="假日名稱，例如：春節 / 補假" />
@@ -224,18 +224,16 @@
   </div>
 
   <script>
-    // ★ 請把下面引號內的文字，換成你在 Google Apps Script 部署後複製的 /exec 網址 ★
     const API_URL = "https://script.google.com/macros/s/AKfycbx5fdOyJTZ5LFOev2v02fLaJkybxvRxj023QUaTPC53IvvbRL72YLt27sJGWvAX0O1B/exec";
 
-    // 舒服好閱讀的柔和色系（header 為表頭色，cell 為欄內下拉選單柔和底色）
     const GROUP_COLORS = [
-      { header: "#dcebe3", cell: "#f4f9f6" }, // 柔和鼠尾草綠
-      { header: "#f7e5d2", cell: "#fdf8f2" }, // 暖杏米色
-      { header: "#dce8f5", cell: "#f3f8fd" }, // 霧感淺藍
-      { header: "#f5dfe6", cell: "#fdf5f8" }, // 柔粉玫瑰
-      { header: "#f3eed4", cell: "#fbf9ee" }, // 淡奶油黃
-      { header: "#d9efec", cell: "#f2fbfa" }, // 淺薄荷青
-      { header: "#e7e0f5", cell: "#f7f4fc" }  // 淡薰衣草紫
+      { header: "#dcebe3", cell: "#f4f9f6" },
+      { header: "#f7e5d2", cell: "#fdf8f2" },
+      { header: "#dce8f5", cell: "#f3f8fd" },
+      { header: "#f5dfe6", cell: "#fdf5f8" },
+      { header: "#f3eed4", cell: "#fbf9ee" },
+      { header: "#d9efec", cell: "#f2fbfa" },
+      { header: "#e7e0f5", cell: "#f7f4fc" }
     ];
 
     const WEEKDAYS = ["日", "一", "二", "三", "四", "五", "六"];
@@ -261,6 +259,8 @@
     let nurses = ["護理師A", "護理師B", "護理師C", "護理師D", "護理師E", "護理師F", "護理師G"];
     let groupCount = 7;
     let monthSchedule = {};
+    let cloudHolidays = {};
+    let isSaving = false;
 
     const nurseTagsEl = document.getElementById("nurseTags");
     const newNurseInput = document.getElementById("newNurseInput");
@@ -303,7 +303,7 @@
       statusBadge.className = "status" + (type === "loading" ? " loading" : type === "err" ? " err" : "");
     }
 
-    function loadCustomHolidays() {
+    function loadLocalHolidays() {
       try {
         return JSON.parse(localStorage.getItem("custom_holidays_shared_v1") || "{}");
       } catch {
@@ -311,40 +311,112 @@
       }
     }
 
-    function saveCustomHolidays(obj) {
+    function saveLocalHolidays(obj) {
       localStorage.setItem("custom_holidays_shared_v1", JSON.stringify(obj));
+    }
+
+    function getMergedHolidays() {
+      return { ...loadLocalHolidays(), ...cloudHolidays };
     }
 
     function getHolidayName(year, month, day) {
       const ymd = `${year}-${pad2(month)}-${pad2(day)}`;
       const md = `${pad2(month)}-${pad2(day)}`;
-      const custom = loadCustomHolidays();
-      if (Object.prototype.hasOwnProperty.call(custom, ymd)) {
-        return custom[ymd] || "";
+      const merged = getMergedHolidays();
+      if (Object.prototype.hasOwnProperty.call(merged, ymd)) {
+        return merged[ymd] || "";
       }
       if (BUILTIN_SPECIFIC_HOLIDAYS[ymd]) return BUILTIN_SPECIFIC_HOLIDAYS[ymd];
       if (BUILTIN_FIXED_HOLIDAYS[md]) return BUILTIN_FIXED_HOLIDAYS[md];
       return "";
     }
 
-    async function callApiGet() {
+    // 正規化後端回傳的排班資料，支援多種常見結構
+    function normalizeSchedule(raw, groups) {
+      const result = {};
+      if (!raw) return result;
+
+      // 情況 A：已經是 { "1": { "A": "王小明" }, ... } 或 { "2026-11-01": { "A": "王小明" } }
+      if (typeof raw === "object" && !Array.isArray(raw)) {
+        Object.entries(raw).forEach(([key, val]) => {
+          const dayMatch = String(key).match(/(\d{1,2})$/);
+          if (!dayMatch || !val || typeof val !== "object") return;
+          const dayKey = String(parseInt(dayMatch[1], 10));
+          if (!result[dayKey]) result[dayKey] = {};
+          Object.entries(val).forEach(([g, nurse]) => {
+            const cleanGroup = String(g).replace("組", "").trim().toUpperCase();
+            if (nurse) result[dayKey][cleanGroup] = String(nurse).trim();
+          });
+        });
+        return result;
+      }
+
+      // 情況 B：陣列格式 [{ day: 1, group: "A", nurse: "王小明" } 或 { date: "2026-11-01", A: "王小明" }]
+      if (Array.isArray(raw)) {
+        raw.forEach(row => {
+          if (!row || typeof row !== "object") return;
+          const rawDay = row.day ?? row.date ?? row.日期;
+          if (!rawDay) return;
+          const dayMatch = String(rawDay).match(/(\d{1,2})$/);
+          if (!dayMatch) return;
+          const dayKey = String(parseInt(dayMatch[1], 10));
+          if (!result[dayKey]) result[dayKey] = {};
+
+          if (row.group !== undefined || row.組別 !== undefined) {
+            const g = String(row.group ?? row.組別).replace("組", "").trim().toUpperCase();
+            const val = String(row.nurse ?? row.value ?? row.護理師 ?? "").trim();
+            if (g && val) result[dayKey][g] = val;
+          } else {
+            groups.forEach(g => {
+              const val = row[g] ?? row[`${g}組`];
+              if (val) result[dayKey][g] = String(val).trim();
+            });
+          }
+        });
+      }
+      return result;
+    }
+
+    async function callApiGet(silent = false) {
       if (!API_URL || API_URL.includes("請把剛剛複製的")) {
         setStatus("尚未填入網址", "err");
         renderAll();
         return;
       }
-      setStatus("雲端同步中...", "loading");
+      if (isSaving && silent) return;
+
+      if (!silent) setStatus("雲端同步中...", "loading");
       try {
-        const res = await fetch(`${API_URL}?ym=${encodeURIComponent(getYM())}`);
+        const ym = getYM();
+        const url = `${API_URL}?ym=${encodeURIComponent(ym)}&_t=${Date.now()}`;
+        const res = await fetch(url, { cache: "no-store" });
         const data = await res.json();
-        if (data.status === "ok") {
-          const parsed = String(data.staffText || "")
-            .split(/[,、，\n]+/)
-            .map(s => s.trim())
-            .filter(Boolean);
-          if (parsed.length > 0) nurses = parsed;
-          groupCount = data.groupCount || 7;
-          monthSchedule = data.schedule || {};
+
+        if (data && (data.status === "ok" || data.ok === true || data.schedule || data.data)) {
+          const staffSource = data.staffText ?? data.staff ?? data.nurses ?? "";
+          if (Array.isArray(staffSource) && staffSource.length > 0) {
+            nurses = staffSource.map(s => String(s).trim()).filter(Boolean);
+          } else if (typeof staffSource === "string" && staffSource.trim()) {
+            const parsed = staffSource
+              .split(/[,、，\n]+/)
+              .map(s => s.trim())
+              .filter(Boolean);
+            if (parsed.length > 0) nurses = parsed;
+          }
+
+          if (Number(data.groupCount) >= 1 && Number(data.groupCount) <= 26) {
+            groupCount = Number(data.groupCount);
+          }
+
+          const rawSchedule = data.schedule ?? data.data ?? data.rows ?? {};
+          monthSchedule = normalizeSchedule(rawSchedule, getGroups());
+
+          const rawHolidays = data.holidays ?? data.customHolidays;
+          if (rawHolidays && typeof rawHolidays === "object" && !Array.isArray(rawHolidays)) {
+            cloudHolidays = rawHolidays;
+            saveLocalHolidays({ ...loadLocalHolidays(), ...cloudHolidays });
+          }
+
           renderAll();
           setStatus("已與雲端同步");
         } else {
@@ -352,16 +424,19 @@
         }
       } catch (e) {
         console.error(e);
-        setStatus("讀取失敗，請檢查網址", "err");
-        renderAll();
+        if (!silent) {
+          setStatus("讀取失敗，請檢查網址", "err");
+          renderAll();
+        }
       }
     }
 
-    async function callApiPost(payload) {
+    async function callApiPost(payload, optionalFallback = false) {
       if (!API_URL || API_URL.includes("請把剛剛複製的")) {
         alert("請先在程式碼裡填入 Google Apps Script 網址！");
-        return;
+        return false;
       }
+      isSaving = true;
       setStatus("儲存到雲端中...", "loading");
       try {
         const res = await fetch(API_URL, {
@@ -370,15 +445,36 @@
           body: JSON.stringify(payload)
         });
         const data = await res.json();
-        if (data.status === "ok") {
+        if (data && (data.status === "ok" || data.ok === true)) {
           setStatus("已儲存到雲端");
-        } else {
-          throw new Error("寫入失敗");
+          return true;
         }
+        throw new Error("寫入失敗");
       } catch (e) {
         console.error(e);
+        if (optionalFallback) {
+          setStatus("已更新（本機同步）");
+          return false;
+        }
         setStatus("儲存失敗，請重試", "err");
+        return false;
+      } finally {
+        isSaving = false;
       }
+    }
+
+    async function addNurseAction() {
+      const name = newNurseInput.value.trim();
+      if (!name) return;
+      if (nurses.includes(name)) {
+        alert("名單裡已經有這個名字囉！");
+        return;
+      }
+      nurses.push(name);
+      newNurseInput.value = "";
+      renderNurseTags();
+      renderTable();
+      await callApiPost({ action: "saveStaff", staffText: nurses.join(", ") });
     }
 
     function renderNurseTags() {
@@ -432,12 +528,14 @@
         const btn = document.createElement("button");
         btn.type = "button";
         btn.textContent = "×";
-        btn.addEventListener("click", () => {
-          const custom = loadCustomHolidays();
-          custom[item.ymd] = "";
-          saveCustomHolidays(custom);
+        btn.addEventListener("click", async () => {
+          const localH = loadLocalHolidays();
+          localH[item.ymd] = "";
+          cloudHolidays[item.ymd] = "";
+          saveLocalHolidays(localH);
           renderMonthHolidays();
           renderTable();
+          await callApiPost({ action: "saveHoliday", date: item.ymd, name: "" }, true);
         });
 
         span.appendChild(btn);
@@ -508,7 +606,6 @@
 
           const currentVal = dayData[group] || "";
 
-          // 防呆：當天其他組已選的護理師不能再被這組選
           const takenByOthers = new Set();
           groups.forEach(g => {
             if (g !== group && dayData[g]) {
@@ -557,18 +654,12 @@
       renderTable();
     }
 
-    document.getElementById("addNurseBtn").addEventListener("click", async () => {
-      const name = newNurseInput.value.trim();
-      if (!name) return;
-      if (nurses.includes(name)) {
-        alert("名單裡已經有這個名字囉！");
-        return;
+    document.getElementById("addNurseBtn").addEventListener("click", addNurseAction);
+    newNurseInput.addEventListener("keydown", async (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        await addNurseAction();
       }
-      nurses.push(name);
-      newNurseInput.value = "";
-      renderNurseTags();
-      renderTable();
-      await callApiPost({ action: "saveStaff", staffText: nurses.join(", ") });
     });
 
     document.getElementById("saveNurseCloudBtn").addEventListener("click", async () => {
@@ -592,24 +683,26 @@
       await callApiPost({ action: "setGroupCount", groupCount });
     });
 
-    document.getElementById("addHolidayBtn").addEventListener("click", () => {
+    document.getElementById("addHolidayBtn").addEventListener("click", async () => {
       const dateVal = holidayDateInput.value;
       const nameVal = holidayNameInput.value.trim() || "國定假日";
       if (!dateVal) {
         alert("請先選擇日期！");
         return;
       }
-      const custom = loadCustomHolidays();
-      custom[dateVal] = nameVal;
-      saveCustomHolidays(custom);
+      const localH = loadLocalHolidays();
+      localH[dateVal] = nameVal;
+      cloudHolidays[dateVal] = nameVal;
+      saveLocalHolidays(localH);
       holidayNameInput.value = "";
       renderMonthHolidays();
       renderTable();
+      await callApiPost({ action: "saveHoliday", date: dateVal, name: nameVal }, true);
     });
 
-    document.getElementById("reloadBtn").addEventListener("click", callApiGet);
-    yearInput.addEventListener("change", callApiGet);
-    monthInput.addEventListener("change", callApiGet);
+    document.getElementById("reloadBtn").addEventListener("click", () => callApiGet(false));
+    yearInput.addEventListener("change", () => callApiGet(false));
+    monthInput.addEventListener("change", () => callApiGet(false));
 
     document.getElementById("clearMonthBtn").addEventListener("click", async () => {
       if (!confirm(`確定要清空 ${yearInput.value} 年 ${monthInput.value} 月的排班嗎？`)) return;
@@ -618,7 +711,14 @@
       await callApiPost({ action: "clearMonth", ym: getYM() });
     });
 
-    callApiGet();
+    // 每 15 秒自動同步雲端資料（若使用者正在操作輸入框或下拉選單則略過本次）
+    setInterval(() => {
+      const activeTag = document.activeElement ? document.activeElement.tagName : "";
+      if (activeTag === "SELECT" || activeTag === "INPUT") return;
+      callApiGet(true);
+    }, 15000);
+
+    callApiGet(false);
   </script>
 </body>
 </html>
