@@ -114,7 +114,8 @@
     button { cursor: pointer; transition: filter 0.15s, transform 0.05s; }
     button:hover:not(:disabled) { filter: brightness(0.96); }
     button:active:not(:disabled) { transform: translateY(1px); }
-    button:disabled, input:disabled, select:disabled { opacity: 0.5; cursor: not-allowed; }
+    button:disabled, input:disabled { opacity: 0.5; cursor: not-allowed; }
+    select:disabled { opacity: 1; cursor: default; }
     button.primary { background: var(--primary); color: #fff; border-color: var(--primary); }
     button.danger { background: var(--danger); color: #fff; border-color: var(--danger); }
     button.secondary { background: #e2e8f0; color: #1e293b; border-color: #cbd5e1; }
@@ -249,7 +250,17 @@
     .avail-empty { color: #b91c1c; font-weight: 700; }
     td select {
       width: 100%; min-width: 100px; padding: 5px 4px; font-size: 13px;
-      border-radius: 6px; border: 1px solid #cbd5e1; color: #1e293b;
+      border-radius: 6px; border: 1px solid #cbd5e1; color: #0f172a;
+      background-color: #ffffff;
+    }
+    /* 唯讀模式時，維持明亮清楚的字色與背景，方便閱讀 */
+    td select.readonly-select {
+      color: #0f172a;
+      -webkit-text-fill-color: #0f172a;
+      background-color: #ffffff;
+      border-color: #94a3b8;
+      font-weight: 600;
+      opacity: 1;
     }
 
     /* 提示訊息 */
@@ -370,7 +381,7 @@
       </label>
       <button id="nextMonthBtn" type="button" class="secondary icon-btn" title="下個月">▶</button>
       <span id="groupBadge" class="badge">目前組別：A～G（7組）</span>
-      <label class="support-toggle" title="人力吃緊時開啟，允許同一天跨組支援並顯示警示">
+      <label class="support-toggle" title="人力吃緊時開啟，全體同步允許同一天跨組支援並顯示警示">
         <input id="allowSupportToggle" type="checkbox" />
         允許跨組支援（人力吃緊）
       </label>
@@ -399,7 +410,7 @@
         <button id="addNurseBtn" type="button" class="primary">新增護理師</button>
         <button id="saveNurseCloudBtn" type="button" class="secondary">儲存名單到雲端</button>
       </div>
-      <div class="note">排班規則：F、G 組為屏東組，選單僅提供「-- 未排 --」、「怡玫」及「其他（自行輸入名字）」；E 組可選所有人（含怡玫）；A～D 組只有在當天其他名字都被選走時才開放選取「怡玫」。人力不足時可勾選「允許跨組支援」。</div>
+      <div class="note">排班規則：F、G 組為屏東組，選單僅提供「-- 未排 --」、「怡玫」及「其他（自行輸入名字）」；E 組可選所有人（含怡玫）；A～D 組只有在當天其他名字都被選走時才開放選取「怡玫」。「允許跨組支援」開關會與雲端同步，大家看到的一樣。</div>
     </div>
 
     <!-- 假日 -->
@@ -444,13 +455,20 @@
 
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbx5fdOyJTZ5LFOev2v02fLaJkybxvRxj023QUaTPC53IvvbRL72YLt27sJGWvAX0O1B/exec";
-    const PINGTUNG_NURSE = "怡玫";
-    const PINGTUNG_GROUPS = new Set(["F", "G"]);      // 只能選怡玫（或臨時輸入）
-    const PINGTUNG_OPEN_GROUPS = new Set(["E"]);      // 所有人都能選，且可直接選怡玫
+    const PINGTUNG_NURSE = "怡枚";
+    const PINGTUNG_GROUPS = new Set(["F", "G"]);      // 只能選未排、怡枚、或臨時輸入
+    const PINGTUNG_OPEN_GROUPS = new Set(["E"]);      // 所有人都能選，且可直接選怡枚
     const CUSTOM_OPTION_VALUE = "__CUSTOM_INPUT__";
 
     // 需要管理員密碼的動作（要和 Apps Script 的 ADMIN_ACTIONS 保持一致）
-    const ADMIN_ACTIONS = new Set(["setLocked", "setGroupCount", "clearMonth", "saveStaff", "saveHoliday"]);
+    const ADMIN_ACTIONS = new Set([
+      "setLocked",
+      "setGroupCount",
+      "setAllowCrossGroupSupport",
+      "clearMonth",
+      "saveStaff",
+      "saveHoliday"
+    ]);
 
     const POLL_MS = 15000;            // 自動同步間隔
     const STALE_WARN_SEC = 45;        // 超過這麼久沒同步成功就顯示警示
@@ -490,15 +508,15 @@
     let nurses = ["護理師A", "護理師B", "護理師C", "護理師D", "護理師E", "護理師F", "護理師G", PINGTUNG_NURSE];
     let groupCount = 7;
     let monthSchedule = {};
-    let cloudHolidays = {};       // 假日只使用雲端資料（不再讀取各人瀏覽器裡的舊資料）
+    let cloudHolidays = {};
     let allowCrossGroupSupport = false;
     let isLocked = false;
     let isAdmin = false;
     let adminPassword = "";
 
     // 資料載入狀態
-    let dataReady = false;        // 目前畫面上的月份，資料是否已從雲端載入成功
-    let loadedYm = "";            // 目前 monthSchedule 屬於哪個月份
+    let dataReady = false;
+    let loadedYm = "";
     let loadError = false;
     let reqCounter = 0;
     let latestManualId = 0;
@@ -513,7 +531,6 @@
     let exportGroupsKey = "";
 
     try { adminPassword = sessionStorage.getItem("nurse_admin_pwd") || ""; } catch (e) { adminPassword = ""; }
-    // 清掉舊版留在各人瀏覽器裡的假日資料，避免每個人看到的假日不同
     try { localStorage.removeItem("custom_holidays_shared_v1"); } catch (e) { /* 忽略 */ }
 
     const nurseTagsEl = document.getElementById("nurseTags");
@@ -546,7 +563,8 @@
     const toastBox = document.getElementById("toastBox");
 
     const now = new Date();
-    yearInput.value = now.getFullYear();
+    let validYear = now.getFullYear();
+    yearInput.value = validYear;
     monthInput.value = now.getMonth() + 1;
 
     /* ---------- 共用小工具 ---------- */
@@ -684,7 +702,10 @@
       ];
       lockableAdminControls.forEach(el => { if (el) el.disabled = isLocked; });
       document.getElementById("clearMonthBtn").disabled = isLocked || !dataReady;
-      allowSupportToggle.disabled = isLocked;
+
+      // 「允許跨組支援」為全體連動設定，由管理員控制；非管理員或鎖定時停用勾選
+      allowSupportToggle.checked = allowCrossGroupSupport;
+      allowSupportToggle.disabled = isLocked || !isAdmin;
     }
 
     /* ---------- 假日（只用雲端資料） ---------- */
@@ -746,7 +767,15 @@
     }
 
     function parseServerData(data) {
-      const out = { nurses: null, groupCount: null, isLocked: false, schedule: {}, holidays: null, signature: "" };
+      const out = {
+        nurses: null,
+        groupCount: null,
+        isLocked: false,
+        allowCrossGroupSupport: false,
+        schedule: {},
+        holidays: null,
+        signature: ""
+      };
 
       const staffSource = data.staffText ?? data.staff ?? data.nurses ?? "";
       if (Array.isArray(staffSource) && staffSource.length > 0) {
@@ -761,6 +790,7 @@
       }
 
       out.isLocked = Boolean(data.isLocked);
+      out.allowCrossGroupSupport = Boolean(data.allowCrossGroupSupport);
 
       const rawSchedule = data.schedule ?? data.data ?? data.rows ?? {};
       out.schedule = normalizeSchedule(rawSchedule, getGroupsByCount(out.groupCount || groupCount));
@@ -770,7 +800,14 @@
         out.holidays = rawHolidays;
       }
 
-      out.signature = JSON.stringify([out.nurses, out.groupCount, out.isLocked, out.schedule, out.holidays]);
+      out.signature = JSON.stringify([
+        out.nurses,
+        out.groupCount,
+        out.isLocked,
+        out.allowCrossGroupSupport,
+        out.schedule,
+        out.holidays
+      ]);
       return out;
     }
 
@@ -778,6 +815,7 @@
       if (parsed.nurses) nurses = parsed.nurses;
       if (parsed.groupCount) groupCount = parsed.groupCount;
       isLocked = parsed.isLocked;
+      allowCrossGroupSupport = parsed.allowCrossGroupSupport;
       monthSchedule = parsed.schedule;
       if (parsed.holidays) cloudHolidays = parsed.holidays;
       loadedYm = ym;
@@ -796,19 +834,19 @@
         if (pendingSaves > 0 || isSelectBusy()) { schedulePendingApply(); return; }
         const p = pendingApply;
         pendingApply = null;
-        if (p.at < lastWriteDoneAt) { callApiGet(true); return; } // 資料在這段期間已過期，重新抓
+        if (p.at < lastWriteDoneAt) { callApiGet(true, true); return; }
         commitServerData(p.parsed, p.ym);
         setStatus(isLocked ? "已鎖定（僅檢視）" : "已與雲端同步");
       }, 1500);
     }
 
-    async function callApiGet(silent = false) {
+    async function callApiGet(silent = false, forceAfterWrite = false) {
       if (!API_URL || API_URL.includes("請把剛剛複製的")) {
         setStatus("尚未填入網址", "err");
         renderAll();
         return;
       }
-      if (silent && (pendingSaves > 0 || document.hidden)) return;
+      if (silent && (!forceAfterWrite && (pendingSaves > 0 || document.hidden))) return;
 
       const ym = getYM();
       const reqId = ++reqCounter;
@@ -829,17 +867,16 @@
           throw new Error("讀取失敗");
         }
 
-        // 過期的回應直接丟掉（例如已經換月份、或有更新的請求先回來了）
         if (ym !== getYM()) return;
         if (reqId < latestManualId || reqId < appliedId) return;
-        if (silent && (pendingSaves > 0 || startedAt < lastWriteDoneAt)) return;
+        if (!forceAfterWrite && silent && (pendingSaves > 0 || startedAt < lastWriteDoneAt)) return;
         appliedId = reqId;
 
         lastSyncAt = Date.now();
         updateSyncInfo();
 
         const parsed = parseServerData(data);
-        const force = !silent || !dataReady || ym !== loadedYm;
+        const force = !silent || !dataReady || ym !== loadedYm || forceAfterWrite;
 
         if (!force && parsed.signature === lastSignature) {
           if (!isLocked) setStatus("已與雲端同步");
@@ -882,7 +919,6 @@
       try { sessionStorage.removeItem("nurse_admin_pwd"); } catch (e) { /* 忽略 */ }
     }
 
-    // 回傳 true = 已確實儲存；false = 沒有儲存（呼叫端要把畫面還原）
     async function callApiPost(payload) {
       if (!API_URL || API_URL.includes("請把剛剛複製的")) {
         alert("請先在程式碼裡填入 Google Apps Script 網址！");
@@ -1210,7 +1246,7 @@
           td.style.backgroundColor = color.cell;
 
           const select = document.createElement("select");
-          select.style.backgroundColor = "#ffffffcc";
+          select.style.backgroundColor = "#ffffff";
 
           const currentVal = dayData[group] || "";
           const isDuplicateToday = Boolean(currentVal) && (countsByNurse[currentVal] || 0) > 1;
@@ -1286,8 +1322,11 @@
             });
           }
 
-          // 資料還沒載入成功的月份，一律不能編輯（避免存到錯的月份）
-          select.disabled = isLocked || !dataReady;
+          const isReadOnlyCell = isLocked || !dataReady;
+          select.disabled = isReadOnlyCell;
+          if (isReadOnlyCell) {
+            select.classList.add("readonly-select");
+          }
 
           select.addEventListener("change", async () => {
             if (isLocked || !dataReady) return;
@@ -1300,6 +1339,13 @@
                 return;
               }
               nextVal = inputName.trim();
+
+              // 自行輸入名字時，先檢查當天其他組是否已排同一人
+              if (takenByOthers.has(nextVal) && !allowCrossGroupSupport) {
+                showToast(`「${nextVal}」今天已經被其他組排班了；如需跨組支援，請先由管理員開啟「允許跨組支援」。`, "err");
+                renderTable();
+                return;
+              }
             }
 
             const cellYm = ymNow;
@@ -1323,13 +1369,13 @@
             });
 
             if (!ok) {
-              // 儲存失敗：把這一格還原成原本的值，並重新向雲端要最新資料
               if (loadedYm === cellYm && getYM() === cellYm &&
                   monthSchedule[dayStr] && monthSchedule[dayStr][group] === nextVal) {
                 monthSchedule[dayStr][group] = prevVal;
                 renderTable();
               }
-              callApiGet(true);
+              lastWriteDoneAt = 0;
+              callApiGet(true, true);
             }
           });
 
@@ -1441,7 +1487,7 @@
           if (v) counts[v] = (counts[v] || 0) + 1;
         });
         const summary = Object.entries(counts).map(([n, c]) => `${n}（${c} 天）`).join("、") || "本月尚無排班";
-        html += `<div class="p-sub">${sel} 組　本月人員：${escapeHtml(summary)}</div>`;
+        html += `<div class="p-sub">${sel} 組 本月人員：${escapeHtml(summary)}</div>`;
         html += `<div class="p-meta">列印時間：${escapeHtml(printedAt)}</div>`;
         html += `<table><thead><tr><th>日期</th><th>星期</th><th>備註</th><th>${sel} 組刷卡護理師</th></tr></thead><tbody>`;
         rows.forEach(r => {
@@ -1503,8 +1549,13 @@
     /* ---------- 月份切換 ---------- */
     function onMonthChanged() {
       const y = parseInt(yearInput.value, 10);
-      if (!y || y < 2020 || y > 2100) return;
-      // 換月份：先清掉舊月份資料並鎖住表格，等新月份載入成功才開放編輯
+      if (!y || y < 2020 || y > 2100) {
+        yearInput.value = validYear;
+        showToast("年份需介於 2020 至 2100 之間，已還原為原本的年份。", "err");
+        return;
+      }
+      validYear = y;
+      yearInput.value = validYear;
       monthSchedule = {};
       dataReady = false;
       loadError = false;
@@ -1515,23 +1566,36 @@
     }
 
     function shiftMonth(delta) {
-      let y = parseInt(yearInput.value, 10);
+      let y = parseInt(yearInput.value, 10) || validYear;
       let m = parseInt(monthInput.value, 10) + delta;
       if (m < 1) { m = 12; y -= 1; }
       if (m > 12) { m = 1; y += 1; }
+      if (y < 2020 || y > 2100) {
+        showToast("年份已超出 2020 至 2100 範圍。", "err");
+        return;
+      }
+      validYear = y;
       yearInput.value = y;
       monthInput.value = m;
       onMonthChanged();
     }
 
     /* ---------- 事件綁定 ---------- */
-    allowSupportToggle.addEventListener("change", () => {
-      if (isLocked) {
+    allowSupportToggle.addEventListener("change", async () => {
+      if (!isAdmin || isLocked) {
         allowSupportToggle.checked = allowCrossGroupSupport;
         return;
       }
-      allowCrossGroupSupport = allowSupportToggle.checked;
+      const prev = allowCrossGroupSupport;
+      const next = allowSupportToggle.checked;
+      allowCrossGroupSupport = next;
       renderTable();
+      const ok = await callApiPost({ action: "setAllowCrossGroupSupport", allowCrossGroupSupport: next });
+      if (!ok) {
+        allowCrossGroupSupport = prev;
+        allowSupportToggle.checked = prev;
+        renderTable();
+      }
     });
 
     lockToggleBtn.addEventListener("click", async () => {
@@ -1620,8 +1684,6 @@
       }
     });
 
-    // 自動同步：不再因為「下拉選單有焦點」就整個停掉，
-    // 而是照常抓資料，只在你剛操作完選單的幾秒內先不重畫表格，避免選單被關掉
     setInterval(() => {
       if (loginDialog.open) return;
       callApiGet(true);
@@ -1635,7 +1697,7 @@
     window.addEventListener("online", () => callApiGet(true));
 
     renderAll();
-    callApiGet(false).then(restoreAdmin);
+    Promise.allSettled([callApiGet(false), restoreAdmin()]);
   </script>
 </body>
 </html>
