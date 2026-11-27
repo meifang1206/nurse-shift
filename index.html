@@ -260,7 +260,7 @@
       <button id="addNurseBtn" type="button" class="primary">新增護理師</button>
       <button id="saveNurseCloudBtn" type="button" class="secondary">儲存名單到雲端</button>
     </div>
-    <div class="note">屏東與排班規則：F、G 組為屏東組，選單僅提供「-- 未排 --」、「怡枚」及「其他（自行輸入名字）」；其他組只有在當天其他名字都被選走時才開放選取「怡枚」。人力不足時亦可勾選「允許跨組支援（人力吃緊）」。</div>
+    <div class="note">屏東與排班規則：F、G 組為屏東組，選單僅提供「-- 未排 --」、「怡玫」及「其他（自行輸入名字）」；其他組只有在當天其他名字都被選走時才開放選取「怡玫」。人力不足時亦可勾選「允許跨組支援（人力吃緊）」。</div>
   </div>
 
   <div class="panel row-flex">
@@ -308,7 +308,7 @@
 
   <script>
     const API_URL = "https://script.google.com/macros/s/AKfycbx5fdOyJTZ5LFOev2v02fLaJkybxvRxj023QUaTPC53IvvbRL72YLt27sJGWvAX0O1B/exec";
-    const PINGTUNG_NURSE = "怡枚";
+    const PINGTUNG_NURSE = "怡玫";
     const PINGTUNG_GROUPS = new Set(["F", "G"]);
     const CUSTOM_OPTION_VALUE = "__CUSTOM_INPUT__";
 
@@ -761,7 +761,7 @@
           select.appendChild(blankOpt);
 
           if (isPtGroup) {
-            // F、G 組（屏東）：僅提供「-- 未排 --」、「怡枚」及「其他（自行輸入名字）...」
+            // F、G 組（屏東）：僅提供「-- 未排 --」、「怡玫」及「其他（自行輸入名字）...」
             const isYimeiTaken = takenByOthers.has(PINGTUNG_NURSE) && currentVal !== PINGTUNG_NURSE;
             if (!isYimeiTaken || allowCrossGroupSupport) {
               const yimeiOpt = document.createElement("option");
@@ -771,7 +771,7 @@
               select.appendChild(yimeiOpt);
             }
 
-            // 若目前存有自行輸入的名字（非空且非怡枚），顯示在選單中並選取
+            // 若目前存有自行輸入的名字（非空且非怡玫），顯示在選單中並選取
             if (currentVal && currentVal !== PINGTUNG_NURSE) {
               const customCurrentOpt = document.createElement("option");
               customCurrentOpt.value = currentVal;
@@ -785,7 +785,7 @@
             customTriggerOpt.textContent = "＋ 其他（自行輸入名字）...";
             select.appendChild(customTriggerOpt);
           } else {
-            // 其他組（A～E 等）：只有在其他名字都被選走時才開放選取「怡枚」
+            // 其他組（A～E 等）：只有在其他名字都被選走時才開放選取「怡玫」
             const otherNames = nurses.filter(n => n !== PINGTUNG_NURSE);
             const allOtherNamesTaken =
               otherNames.length > 0 && otherNames.every(n => takenByOthers.has(n));
